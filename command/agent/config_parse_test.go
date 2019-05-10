@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/nomad/helper"
+	"github.com/hashicorp/nomad/nomad/structs"
 	"github.com/hashicorp/nomad/nomad/structs/config"
 	"github.com/stretchr/testify/require"
 )
@@ -78,6 +79,9 @@ var basicConfig = &Config{
 		GCInodeUsageThreshold: 91,
 		GCMaxAllocs:           50,
 		NoHostUUID:            helper.BoolToPtr(false),
+		HostVolumes: []*structs.ClientHostVolumeConfig{
+			{Name: "tmp", Source: "/tmp"},
+		},
 	},
 	Server: &ServerConfig{
 		Enabled:                true,
