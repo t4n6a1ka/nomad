@@ -740,6 +740,22 @@ func (d *Driver) createContainerConfig(task *drivers.TaskConfig, driverConfig *T
 		Config: driverConfig.Logging.Config,
 	}
 
+	if hostConfig.LogConfig.Type == "json-file" || hostConfig.LogConfig.Type == "" {
+		logger.Debug("configuring docker json-file logs")
+		hostConfig.LogConfig.Type = "json-file"
+		if hostConfig.LogConfig.Config == nil {
+			hostConfig.LogConfig.Config = make(map[string]string)
+		}
+		hostConfig.LogConfig.Config["mode"] = "non-blocking"
+		hostConfig.LogConfig.Config["max-file"] = "3"
+		hostConfig.LogConfig.Config["max-size"] = "10m"
+	}
+	logger.Debug("configured logs", "type", hostConfig.LogConfig.Type,
+		"mode", hostConfig.LogConfig.Config["mode"],
+		"max-file", hostConfig.LogConfig.Config["max-file"],
+		"max-size", hostConfig.LogConfig.Config["max-size"])
+
+
 	logger.Debug("configured resources", "memory", hostConfig.Memory,
 		"cpu_shares", hostConfig.CPUShares, "cpu_quota", hostConfig.CPUQuota,
 		"cpu_period", hostConfig.CPUPeriod)
