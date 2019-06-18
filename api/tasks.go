@@ -372,6 +372,7 @@ type Service struct {
 	AddressMode  string   `mapstructure:"address_mode"`
 	Checks       []ServiceCheck
 	CheckRestart *CheckRestart `mapstructure:"check_restart"`
+	Connect      *ConsulConnect
 }
 
 func (s *Service) Canonicalize(t *Task, tg *TaskGroup, job *Job) {
@@ -390,6 +391,24 @@ func (s *Service) Canonicalize(t *Task, tg *TaskGroup, job *Job) {
 		s.Checks[i].CheckRestart = s.CheckRestart.Merge(check.CheckRestart)
 		s.Checks[i].CheckRestart.Canonicalize()
 	}
+}
+
+type ConsulConnect struct {
+	SidecarService *ConsulSidecarService `mapstructure:"sidecar_service"`
+}
+
+type ConsulSidecarService struct {
+	Proxy *ConsulProxy
+}
+
+type ConsulProxy struct {
+	Upstreams []*ConsulUpstream
+}
+
+//TODO(schmichael) pointers? canonicalize?
+type ConsulUpstream struct {
+	DestinationName string `mapstructure:"destination_name"`
+	LocalBindPort   int    `mapstructure:"local_bind_port"`
 }
 
 // EphemeralDisk is an ephemeral disk object
@@ -495,6 +514,7 @@ type TaskGroup struct {
 	Migrate          *MigrateStrategy
 	Networks         []*NetworkResource
 	Meta             map[string]string
+	Services         []*Service
 }
 
 // NewTaskGroup creates a new TaskGroup.

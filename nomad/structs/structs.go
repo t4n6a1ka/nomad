@@ -2063,6 +2063,7 @@ func (nr *NetworkResource) Equals(other *NetworkResource) bool {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -4638,6 +4639,10 @@ type TaskGroup struct {
 	// Networks are the network configuration for the task group. This can be
 	// overridden in the task.
 	Networks Networks
+
+	// Services this group provides
+	//TODO(schmichael) -- move to a Network?!
+	Services []*Service
 }
 
 func (tg *TaskGroup) Copy() *TaskGroup {
@@ -4675,6 +4680,14 @@ func (tg *TaskGroup) Copy() *TaskGroup {
 	if tg.EphemeralDisk != nil {
 		ntg.EphemeralDisk = tg.EphemeralDisk.Copy()
 	}
+
+	if tg.Services != nil {
+		ntg.Services = make([]*Service, len(tg.Services))
+		for i, s := range tg.Services {
+			ntg.Services[i] = s.Copy()
+		}
+	}
+
 	return ntg
 }
 
@@ -4973,6 +4986,26 @@ func (c *CheckRestart) Copy() *CheckRestart {
 	return nc
 }
 
+func (c *CheckRestart) Equals(o *CheckRestart) bool {
+	if c == nil || o == nil {
+		return c == o
+	}
+
+	if c.Limit != o.Limit {
+		return false
+	}
+
+	if c.Grace != o.Grace {
+		return false
+	}
+
+	if c.IgnoreWarnings != o.IgnoreWarnings {
+		return false
+	}
+
+	return true
+}
+
 func (c *CheckRestart) Validate() error {
 	if c == nil {
 		return nil
@@ -5038,6 +5071,83 @@ func (sc *ServiceCheck) Copy() *ServiceCheck {
 	nsc.Header = helper.CopyMapStringSliceString(sc.Header)
 	nsc.CheckRestart = sc.CheckRestart.Copy()
 	return nsc
+}
+
+func (sc *ServiceCheck) Equals(o *ServiceCheck) bool {
+	if sc == nil || o == nil {
+		return sc == o
+	}
+
+	if sc.Name != o.Name {
+		return false
+	}
+
+	if sc.AddressMode != o.AddressMode {
+		return false
+	}
+
+	if !helper.CompareSliceSetString(sc.Args, o.Args) {
+		return false
+	}
+
+	if !sc.CheckRestart.Equals(o.CheckRestart) {
+		return false
+	}
+
+	if sc.Command != o.Command {
+		return false
+	}
+
+	if sc.GRPCService != o.GRPCService {
+		return false
+	}
+
+	if sc.GRPCUseTLS != o.GRPCUseTLS {
+		return false
+	}
+
+	// Use DeepEqual here as order of slice values could matter
+	if !reflect.DeepEqual(sc.Header, o.Header) {
+		return false
+	}
+
+	if sc.InitialStatus != o.InitialStatus {
+		return false
+	}
+
+	if sc.Interval != o.Interval {
+		return false
+	}
+
+	if sc.Method != o.Method {
+		return false
+	}
+
+	if sc.Path != o.Path {
+		return false
+	}
+
+	if sc.PortLabel != o.Path {
+		return false
+	}
+
+	if sc.Protocol != o.Protocol {
+		return false
+	}
+
+	if sc.TLSSkipVerify != o.TLSSkipVerify {
+		return false
+	}
+
+	if sc.Timeout != o.Timeout {
+		return false
+	}
+
+	if sc.Type != o.Type {
+		return false
+	}
+
+	return true
 }
 
 func (sc *ServiceCheck) Canonicalize(serviceName string) {
@@ -5216,6 +5326,8 @@ type Service struct {
 	Tags       []string        // List of tags for the service
 	CanaryTags []string        // List of tags for the service when it is a canary
 	Checks     []*ServiceCheck // List of checks associated with the service
+
+	Connect *ConsulConnect //TODO(schmichael)
 }
 
 func (s *Service) Copy() *Service {
@@ -5342,6 +5454,55 @@ func (s *Service) Hash(allocID, taskName string, canary bool) string {
 	return b32.EncodeToString(h.Sum(nil))
 }
 
+func (s *Service) Equals(o *Service) bool {
+	if s == nil || o == nil {
+		return s == o
+	}
+
+	if s.AddressMode != o.AddressMode {
+		return false
+	}
+
+	if !helper.CompareSliceSetString(s.CanaryTags, o.CanaryTags) {
+		return false
+	}
+
+	if len(s.Checks) != len(o.Checks) {
+		return false
+	}
+
+OUTER:
+	for i := range s.Checks {
+		for ii := range o.Checks {
+			if s.Checks[i].Equals(o.Checks[ii]) {
+				// Found match; continue with next check
+				continue OUTER
+			}
+		}
+
+		// No match
+		return false
+	}
+
+	if !s.Connect.Equals(o.Connect) {
+		return false
+	}
+
+	if s.Name != o.Name {
+		return false
+	}
+
+	if s.PortLabel != o.PortLabel {
+		return false
+	}
+
+	if !helper.CompareSliceSetString(s.Tags, o.Tags) {
+		return false
+	}
+
+	return true
+}
+
 const (
 	// DefaultKillTimeout is the default timeout between signaling a task it
 	// will be killed and killing it.
@@ -5445,6 +5606,10 @@ type Task struct {
 	// KillSignal is the kill signal to use for the task. This is an optional
 	// specification and defaults to SIGINT
 	KillSignal string
+
+	//TODO(schmichael) - lowest order task runs first
+	// negative numbers are reserved for internal use
+	Order int
 }
 
 func (t *Task) Copy() *Task {
