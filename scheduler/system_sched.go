@@ -18,6 +18,7 @@ const (
 
 // SystemScheduler is used for 'system' jobs. This scheduler is
 // designed for services that should be run on every client.
+// One for each job, containing an allocation for each node
 type SystemScheduler struct {
 	logger  log.Logger
 	state   State
@@ -35,6 +36,7 @@ type SystemScheduler struct {
 	limitReached bool
 	nextEval     *structs.Evaluation
 
+	blocked        map[string]*structs.Evaluation
 	failedTGAllocs map[string]*structs.AllocMetric
 	queuedAllocs   map[string]int
 }
@@ -324,6 +326,7 @@ func (s *SystemScheduler) computePlacements(place []allocTuple) error {
 
 			// Actual failure to start this task on this candidate node, report it individually
 			s.failedTGAllocs[missing.TaskGroup.Name] = s.ctx.Metrics()
+			s.addBlocked(node)
 			continue
 		}
 
@@ -389,4 +392,25 @@ func (s *SystemScheduler) computePlacements(place []allocTuple) error {
 	}
 
 	return nil
+}
+
+// addBlocked creates a new blocked eval for this job on this node
+// - Keep blocked evals in the scheduler, but just for grins
+// - Submits to the planner (worker.go), which keeps the eval for execution later
+func (s *SystemScheduler) addBlocked(node *structs.Node) error {
+	e := s.ctx.Eligibility()
+	escaped := e.HasEscaped()
+
+	// Only store the eligible classes if the eval hasn't escaped.
+	var classEligibility map[string]bool
+	if !escaped {
+		classEligibility = e.GetClasses()
+	}
+
+	blocked := s.eval.CreateBlockedEval(classEligibility, escaped, e.QuotaLimitReached())
+	blocked.StatusDescription = blockedEvalFailedPlacements
+
+	s.blocked[node.ID] = blocked
+
+	return s.planner.CreateEval(blocked)
 }
