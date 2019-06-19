@@ -254,6 +254,7 @@ func (w *Worker) invokeScheduler(snap *state.StateSnapshot, eval *structs.Evalua
 	}
 
 	// Create the scheduler, or use the special system scheduler
+	// QUESTION: does this mean "special core scheduler"
 	var sched scheduler.Scheduler
 	if eval.Type == structs.JobTypeCore {
 		sched = NewCoreScheduler(w.srv, snap)
