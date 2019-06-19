@@ -47,6 +47,11 @@ type BlockedEvals struct {
 	// classes.
 	escaped map[string]wrappedEval
 
+	// system is the set of system evaluations that failed to start on nodes because of
+	// resource constraints. Retried on any change for those nodes
+	// map[node.ID][token]eval
+	system map[string]map[string]wrappedEval
+
 	// unblockCh is used to buffer unblocking of evaluations.
 	capacityChangeCh chan *capacityUpdate
 
@@ -113,6 +118,7 @@ func NewBlockedEvals(evalBroker *EvalBroker, logger log.Logger) *BlockedEvals {
 		evalBroker:       evalBroker,
 		captured:         make(map[string]wrappedEval),
 		escaped:          make(map[string]wrappedEval),
+		system:           make(map[string]map[string]wrappedEval),
 		jobs:             make(map[structs.NamespacedID]string),
 		unblockIndexes:   make(map[string]uint64),
 		capacityChangeCh: make(chan *capacityUpdate, unblockBuffer),
@@ -227,9 +233,26 @@ func (b *BlockedEvals) processBlock(eval *structs.Evaluation, token string) {
 		return
 	}
 
+	// System evals are indexed by node and re-processed on utilization changes in
+	// existing nodes
+	if eval.Type == structs.JobTypeSystem {
+		b.setSystemEval(eval.NodeID, token, eval)
+	}
+
 	// Add the eval to the set of blocked evals whose jobs constraints are
 	// captured by computed node class.
 	b.captured[eval.ID] = wrapped
+}
+
+// setSystemEval creates the inner map if necessary
+func (b *BlockedEvals) setSystemEval(nodeID string, token string, eval *structs.Evaluation) {
+	if _, ok := b.system[nodeID]; !ok {
+		b.system[nodeID] = make(map[string]wrappedEval)
+	}
+	b.system[eval.NodeID][token] = wrappedEval{
+		eval:  eval,
+		token: token,
+	}
 }
 
 // processBlockJobDuplicate handles the case where the new eval is for a job
