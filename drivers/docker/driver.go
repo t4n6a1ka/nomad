@@ -746,8 +746,8 @@ func (d *Driver) createContainerConfig(task *drivers.TaskConfig, driverConfig *T
 		if hostConfig.LogConfig.Config == nil {
 			hostConfig.LogConfig.Config = make(map[string]string)
 		}
-		hostConfig.LogConfig.Config["max-file"] = "3"
-		hostConfig.LogConfig.Config["max-size"] = "10m"
+		hostConfig.LogConfig.Config["max-file"] = "2"
+		hostConfig.LogConfig.Config["max-size"] = "2m"
 	}
 	logger.Debug("configured logs", "type", hostConfig.LogConfig.Type,
 		"max-file", hostConfig.LogConfig.Config["max-file"],
