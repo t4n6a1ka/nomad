@@ -740,8 +740,8 @@ func (d *Driver) createContainerConfig(task *drivers.TaskConfig, driverConfig *T
 		Config: driverConfig.Logging.Config,
 	}
 
-	if hostConfig.LogConfig.Type == "json-file" || hostConfig.LogConfig.Type == "" {
-		logger.Debug("configuring docker json-file logs")
+	if hostConfig.LogConfig.Type == "" {
+		logger.Trace("no docker log driver provided, defaulting to json-file")
 		hostConfig.LogConfig.Type = "json-file"
 		if hostConfig.LogConfig.Config == nil {
 			hostConfig.LogConfig.Config = make(map[string]string)
