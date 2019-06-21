@@ -50,7 +50,7 @@ type BlockedEvals struct {
 	// system is the set of system evaluations that failed to start on nodes because of
 	// resource constraints. Retried on any change for those nodes
 	// map[node.ID][token]eval
-	system map[string]map[string]wrappedEval
+	system map[string]map[*structs.Evaluation]string
 
 	// unblockCh is used to buffer unblocking of evaluations.
 	capacityChangeCh chan *capacityUpdate
@@ -118,7 +118,7 @@ func NewBlockedEvals(evalBroker *EvalBroker, logger log.Logger) *BlockedEvals {
 		evalBroker:       evalBroker,
 		captured:         make(map[string]wrappedEval),
 		escaped:          make(map[string]wrappedEval),
-		system:           make(map[string]map[string]wrappedEval),
+		system:           make(map[string]map[*structs.Evaluation]string),
 		jobs:             make(map[structs.NamespacedID]string),
 		unblockIndexes:   make(map[string]uint64),
 		capacityChangeCh: make(chan *capacityUpdate, unblockBuffer),
@@ -247,12 +247,9 @@ func (b *BlockedEvals) processBlock(eval *structs.Evaluation, token string) {
 // setSystemEval creates the inner map if necessary
 func (b *BlockedEvals) setSystemEval(nodeID string, token string, eval *structs.Evaluation) {
 	if _, ok := b.system[nodeID]; !ok {
-		b.system[nodeID] = make(map[string]wrappedEval)
+		b.system[nodeID] = make(map[*structs.Evaluation]string)
 	}
-	b.system[eval.NodeID][token] = wrappedEval{
-		eval:  eval,
-		token: token,
-	}
+	b.system[eval.NodeID][eval] = token
 }
 
 // processBlockJobDuplicate handles the case where the new eval is for a job
@@ -500,6 +497,24 @@ func (b *BlockedEvals) UnblockClassAndQuota(class, quota string, index uint64) {
 	}
 }
 
+// UnblockNode finds any blocked evalution that's node specific (system jobs) and enqueues
+// it on the eval broker
+func (b *BlockedEvals) UnblockNode(nodeID string, index uint64) {
+	b.l.Lock()
+
+	evals, ok := b.system[nodeID]
+
+	// Do nothing if not enabled
+	if !b.enabled || !ok || len(evals) == 0 {
+		b.l.Unlock()
+		return
+	}
+
+	delete(b.system, nodeID)
+	b.unblockStats(len(evals), 0)
+	b.evalBroker.EnqueueAll(evals)
+}
+
 // watchCapacity is a long lived function that watches for capacity changes in
 // nodes and unblocks the correct set of evals.
 func (b *BlockedEvals) watchCapacity(stopCh <-chan struct{}, changeCh <-chan *capacityUpdate) {
@@ -567,14 +582,18 @@ func (b *BlockedEvals) unblock(computedClass, quota string, index uint64) {
 	}
 
 	if l := len(unblocked); l != 0 {
-		// Update the counters
-		b.stats.TotalEscaped = 0
-		b.stats.TotalBlocked -= l
-		b.stats.TotalQuotaLimit -= numQuotaLimit
+		b.unblockStats(l, numQuotaLimit)
 
 		// Enqueue all the unblocked evals into the broker.
 		b.evalBroker.EnqueueAll(unblocked)
 	}
+}
+
+func (b *BlockedEvals) unblockStats(total int, quota int) {
+	// Update the counters
+	b.stats.TotalEscaped = 0
+	b.stats.TotalBlocked -= total
+	b.stats.TotalQuotaLimit -= quota
 }
 
 // UnblockFailed unblocks all blocked evaluation that were due to scheduler
