@@ -23,11 +23,13 @@ func (c *ConsulConnect) HasSidecar() bool {
 }
 
 type ConsulSidecarService struct {
+	Port  string
 	Proxy *ConsulProxy
 }
 
 func (s *ConsulSidecarService) Copy() *ConsulSidecarService {
 	return &ConsulSidecarService{
+		Port:  s.Port,
 		Proxy: s.Proxy.Copy(),
 	}
 }
@@ -35,6 +37,10 @@ func (s *ConsulSidecarService) Copy() *ConsulSidecarService {
 func (s *ConsulSidecarService) Equals(o *ConsulSidecarService) bool {
 	if s == nil || o == nil {
 		return s == o
+	}
+
+	if s.Port != o.Port {
+		return false
 	}
 
 	return s.Proxy.Equals(o.Proxy)

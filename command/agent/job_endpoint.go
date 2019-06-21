@@ -1004,7 +1004,9 @@ func ApiServicesToStructs(in []*api.Service) []*structs.Service {
 			continue
 		}
 
-		out[i].Connect.SidecarService = &structs.ConsulSidecarService{}
+		out[i].Connect.SidecarService = &structs.ConsulSidecarService{
+			Port: s.Connect.SidecarService.Port,
+		}
 
 		if s.Connect.SidecarService.Proxy == nil {
 			continue

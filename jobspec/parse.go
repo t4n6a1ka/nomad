@@ -1523,6 +1523,7 @@ func parseConnect(co *ast.ObjectItem) (*api.ConsulConnect, error) {
 
 func parseSidecarService(o *ast.ObjectItem) (*api.ConsulSidecarService, error) {
 	valid := []string{
+		"port",
 		"proxy",
 	}
 
@@ -1531,6 +1532,24 @@ func parseSidecarService(o *ast.ObjectItem) (*api.ConsulSidecarService, error) {
 	}
 
 	var sidecar api.ConsulSidecarService
+	var m map[string]interface{}
+	if err := hcl.DecodeObject(&m, o.Val); err != nil {
+		return nil, err
+	}
+
+	delete(m, "proxy")
+
+	dec, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
+		DecodeHook:       mapstructure.StringToTimeDurationHookFunc(),
+		WeaklyTypedInput: true,
+		Result:           &sidecar,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := dec.Decode(m); err != nil {
+		return nil, fmt.Errorf("foo: %v", err)
+	}
 
 	var proxyList *ast.ObjectList
 	if ot, ok := o.Val.(*ast.ObjectType); ok {
@@ -1560,7 +1579,7 @@ func parseSidecarService(o *ast.ObjectItem) (*api.ConsulSidecarService, error) {
 
 func parseProxy(o *ast.ObjectItem) (*api.ConsulProxy, error) {
 	valid := []string{
-		"upstream",
+		"upstreams",
 	}
 
 	if err := helper.CheckHCLKeys(o.Val, valid); err != nil {
@@ -1578,7 +1597,7 @@ func parseProxy(o *ast.ObjectItem) (*api.ConsulProxy, error) {
 	}
 
 	// Parse the proxy
-	uo := listVal.Filter("upstream")
+	uo := listVal.Filter("upstreams")
 	proxy.Upstreams = make([]*api.ConsulUpstream, len(uo.Items))
 	for i := range uo.Items {
 		u, err := parseUpstream(uo.Items[i])

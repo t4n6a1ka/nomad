@@ -398,6 +398,7 @@ type ConsulConnect struct {
 }
 
 type ConsulSidecarService struct {
+	Port  string
 	Proxy *ConsulProxy
 }
 
