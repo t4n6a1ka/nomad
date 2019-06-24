@@ -744,7 +744,7 @@ func (n *nomadFSM) applyAllocClientUpdate(buf []byte, index uint64) interface{} 
 			}
 
 			n.blockedEvals.UnblockClassAndQuota(node.ComputedClass, quota, index)
-			// UnblockNode here?
+			n.blockedEvals.UnblockNode(node.ID, index)
 		}
 	}
 
