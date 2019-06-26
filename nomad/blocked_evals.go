@@ -50,7 +50,7 @@ type BlockedEvals struct {
 	// system is the set of system evaluations that failed to start on nodes because of
 	// resource constraints. Retried on any change for those nodes
 	// map[node.ID][token]eval
-	system map[string]map[*structs.Evaluation]string
+	system *systemEvals
 
 	// unblockCh is used to buffer unblocking of evaluations.
 	capacityChangeCh chan *capacityUpdate
@@ -96,6 +96,73 @@ type wrappedEval struct {
 	token string
 }
 
+// systemEvals are handled specially, each job may have a blocked eval on each node
+type systemEvals struct {
+	// job maps a single blocked eval on each node for each job
+	job map[structs.NamespacedID]map[string]*structs.Evaluation
+
+	// node maps a node id to the set of all blocked evals, mapped to their authentication tokens
+	// node map[string]map[*structs.Evaluation]string
+	node map[string]map[string]*wrappedEval
+}
+
+func newSystemEvals() *systemEvals {
+	return &systemEvals{
+		job: map[structs.NamespacedID]map[string]*structs.Evaluation{},
+		// node: map[string]map[*structs.Evaluation]string{},
+		node: map[string]map[string]*wrappedEval{},
+	}
+}
+
+// setSystemEval creates the inner map if necessary
+func (b *BlockedEvals) setSystemEval(eval *structs.Evaluation, token string) {
+	// store the eval by node id
+	if _, ok := b.system.node[eval.NodeID]; !ok {
+		// b.system.node[eval.NodeID] = make(map[*structs.Evaluation]string)
+		b.system.node[eval.NodeID] = make(map[string]*wrappedEval)
+	}
+	b.system.node[eval.NodeID][eval.ID] = &wrappedEval{eval: eval, token: token}
+
+	// link the job to the node for cleanup
+	jobID := structs.NewNamespacedID(eval.JobID, eval.Namespace)
+	if _, ok := b.system.job[jobID]; !ok {
+		b.system.job[jobID] = make(map[string]*structs.Evaluation)
+	}
+
+	// if we're displacing the old blocked id for this node, clean delete it first
+	if prev, ok := b.system.job[jobID][eval.NodeID]; ok {
+		b.delSystemEval(prev)
+	}
+
+	// set this eval as the new eval for this job on this node
+	b.system.job[jobID][eval.NodeID] = eval
+}
+
+// delSystemEval deletes a blocked system eval
+func (b *BlockedEvals) delSystemEval(eval *structs.Evaluation) {
+	// delete the job index iff this eval is the currently listed blocked eval
+	jobID := structs.NewNamespacedID(eval.JobID, eval.Namespace)
+	e, ok := b.system.job[jobID][eval.NodeID]
+	if ok && e.ID == eval.ID {
+		delete(b.system.job[jobID], eval.NodeID)
+	}
+
+	// if we're deleting from system.node, decrement stats
+	if _, ok = b.system.node[eval.NodeID][eval.ID]; ok {
+		b.stats.TotalBlocked--
+		delete(b.system.node[eval.NodeID], eval.ID)
+	}
+}
+
+// getSystemEvals returns the set of blocked evals for namespaced job
+func (b *BlockedEvals) getSystemEvals(jobID structs.NamespacedID) []*structs.Evaluation {
+	var out []*structs.Evaluation
+	for _, e := range b.system.job[jobID] {
+		out = append(out, e)
+	}
+	return out
+}
+
 // BlockedStats returns all the stats about the blocked eval tracker.
 type BlockedStats struct {
 	// TotalEscaped is the total number of blocked evaluations that have escaped
@@ -118,7 +185,7 @@ func NewBlockedEvals(evalBroker *EvalBroker, logger log.Logger) *BlockedEvals {
 		evalBroker:       evalBroker,
 		captured:         make(map[string]wrappedEval),
 		escaped:          make(map[string]wrappedEval),
-		system:           make(map[string]map[*structs.Evaluation]string),
+		system:           newSystemEvals(),
 		jobs:             make(map[structs.NamespacedID]string),
 		unblockIndexes:   make(map[string]uint64),
 		capacityChangeCh: make(chan *capacityUpdate, unblockBuffer),
@@ -236,20 +303,12 @@ func (b *BlockedEvals) processBlock(eval *structs.Evaluation, token string) {
 	// System evals are indexed by node and re-processed on utilization changes in
 	// existing nodes
 	if eval.Type == structs.JobTypeSystem {
-		b.setSystemEval(eval.NodeID, token, eval)
+		b.setSystemEval(eval, token)
 	}
 
 	// Add the eval to the set of blocked evals whose jobs constraints are
 	// captured by computed node class.
 	b.captured[eval.ID] = wrapped
-}
-
-// setSystemEval creates the inner map if necessary
-func (b *BlockedEvals) setSystemEval(nodeID string, token string, eval *structs.Evaluation) {
-	if _, ok := b.system[nodeID]; !ok {
-		b.system[nodeID] = make(map[*structs.Evaluation]string)
-	}
-	b.system[eval.NodeID][eval] = token
 }
 
 // processBlockJobDuplicate handles the case where the new eval is for a job
@@ -385,6 +444,13 @@ func (b *BlockedEvals) Untrack(jobID, namespace string) {
 
 	nsID := structs.NewNamespacedID(jobID, namespace)
 
+	if _, ok := b.system.job[nsID]; ok {
+		for _, e := range b.getSystemEvals(nsID) {
+			b.delSystemEval(e)
+		}
+		return
+	}
+
 	// Get the evaluation ID to cancel
 	evalID, ok := b.jobs[nsID]
 	if !ok {
@@ -502,7 +568,7 @@ func (b *BlockedEvals) UnblockClassAndQuota(class, quota string, index uint64) {
 func (b *BlockedEvals) UnblockNode(nodeID string, index uint64) {
 	b.l.Lock()
 
-	evals, ok := b.system[nodeID]
+	evals, ok := b.system.node[nodeID]
 
 	// Do nothing if not enabled
 	if !b.enabled || !ok || len(evals) == 0 {
@@ -510,9 +576,15 @@ func (b *BlockedEvals) UnblockNode(nodeID string, index uint64) {
 		return
 	}
 
-	delete(b.system, nodeID)
-	b.unblockStats(len(evals), 0)
-	b.evalBroker.EnqueueAll(evals)
+	queuable := map[*structs.Evaluation]string{}
+
+	// QUESTION is it dangerous to delete this first?
+	for _, wrapped := range evals {
+		b.delSystemEval(wrapped.eval)
+		queuable[wrapped.eval] = wrapped.token
+	}
+
+	b.evalBroker.EnqueueAll(queuable)
 }
 
 // watchCapacity is a long lived function that watches for capacity changes in
@@ -582,18 +654,14 @@ func (b *BlockedEvals) unblock(computedClass, quota string, index uint64) {
 	}
 
 	if l := len(unblocked); l != 0 {
-		b.unblockStats(l, numQuotaLimit)
+		// Update the counters
+		b.stats.TotalEscaped = 0
+		b.stats.TotalBlocked -= l
+		b.stats.TotalQuotaLimit -= numQuotaLimit
 
 		// Enqueue all the unblocked evals into the broker.
 		b.evalBroker.EnqueueAll(unblocked)
 	}
-}
-
-func (b *BlockedEvals) unblockStats(total int, quota int) {
-	// Update the counters
-	b.stats.TotalEscaped = 0
-	b.stats.TotalBlocked -= total
-	b.stats.TotalQuotaLimit -= quota
 }
 
 // UnblockFailed unblocks all blocked evaluation that were due to scheduler
