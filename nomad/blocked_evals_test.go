@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/nomad/nomad/mock"
 	"github.com/hashicorp/nomad/nomad/structs"
 	"github.com/hashicorp/nomad/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 func testBlockedEvals(t *testing.T) (*BlockedEvals, *EvalBroker) {
@@ -703,4 +704,28 @@ func TestBlockedEvals_Untrack_Quota(t *testing.T) {
 	if bs.TotalBlocked != 0 || bs.TotalEscaped != 0 || bs.TotalQuotaLimit != 0 {
 		t.Fatalf("bad: %#v", bs)
 	}
+}
+
+func TestBlockedEvals_NodeIDSystem(t *testing.T) {
+	t.Parallel()
+	blocked, _ := testBlockedEvals(t)
+
+	// Create a blocked evals and add it to the blocked tracker.
+	e := mock.Eval()
+	e.Type = structs.JobTypeSystem
+	e.NodeID = "foo"
+	blocked.Block(e)
+
+	// Verify block did track
+	bs := blocked.Stats()
+	require.Equal(t, 1, bs.TotalBlocked)
+	require.Equal(t, 0, bs.TotalEscaped)
+	require.Equal(t, 0, bs.TotalQuotaLimit)
+
+	// Untrack and verify
+	blocked.Untrack(e.JobID, e.Namespace)
+	bs = blocked.Stats()
+	require.Equal(t, 0, bs.TotalBlocked)
+	require.Equal(t, 0, bs.TotalEscaped)
+	require.Equal(t, 0, bs.TotalQuotaLimit)
 }
