@@ -247,15 +247,15 @@ func (n *Node) constructNodeServerInfoResponse(snap *state.StateSnapshot, reply 
 
 // Deregister is the deprecated single deregistration endpoint
 func (n *Node) Deregister(args *structs.NodeDeregisterRequest, reply *structs.NodeUpdateResponse) error {
-	return n.DeregisterBatch(&structs.NodeBatchDeregisterRequest{
+	return n.BatchDeregister(&structs.NodeBatchDeregisterRequest{
 		NodeIDs:      []string{args.NodeID},
 		WriteRequest: args.WriteRequest,
 	}, reply)
 }
 
-// DeregisterBatch is used to remove client nodes from the cluster. If a client should just
+// BatchDeregister is used to remove client nodes from the cluster. If a client should just
 // be made unavailable for scheduling, a status update is preferred.
-func (n *Node) DeregisterBatch(args *structs.NodeBatchDeregisterRequest, reply *structs.NodeUpdateResponse) error {
+func (n *Node) BatchDeregister(args *structs.NodeBatchDeregisterRequest, reply *structs.NodeUpdateResponse) error {
 	if done, err := n.srv.forward("Node.BatchDeregister", args, args, reply); done {
 		return err
 	}
