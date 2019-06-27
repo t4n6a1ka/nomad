@@ -245,9 +245,16 @@ func (n *Node) constructNodeServerInfoResponse(snap *state.StateSnapshot, reply 
 	return nil
 }
 
-// Deregister is the deprecated single deregistration endpoint
+// Deregister removes a single client node from the cluster
 func (n *Node) Deregister(args *structs.NodeDeregisterRequest, reply *structs.NodeUpdateResponse) error {
-	return n.BatchDeregister(&structs.NodeBatchDeregisterRequest{
+	// Forward the request using the singular endpoint for backwards compatibility in
+	// clusters containing pre-0.9.4 servers
+	if done, err := n.srv.forward("Node.Deregister", args, args, reply); done {
+		return err
+	}
+
+	// If we're handling the request locally on the leader, operate on a batch of size 1
+	return n.batchDeregister(&structs.NodeBatchDeregisterRequest{
 		NodeIDs:      []string{args.NodeID},
 		WriteRequest: args.WriteRequest,
 	}, reply)
@@ -259,6 +266,11 @@ func (n *Node) BatchDeregister(args *structs.NodeBatchDeregisterRequest, reply *
 	if done, err := n.srv.forward("Node.BatchDeregister", args, args, reply); done {
 		return err
 	}
+	return n.batchDeregister(args, reply)
+}
+
+// batchDeregister implements the actual deregistration on the leader. It does not forward requests
+func (n *Node) batchDeregister(args *structs.NodeBatchDeregisterRequest, reply *structs.NodeUpdateResponse) error {
 	defer metrics.MeasureSince([]string{"nomad", "client", "deregister"}, time.Now())
 
 	// Check node permissions
