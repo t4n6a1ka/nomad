@@ -175,7 +175,10 @@ func TestBlockedEvals_UnblockEscaped(t *testing.T) {
 	}
 
 	blocked.Unblock("v1:123", 1000)
+	waitBrokerEnqueued(t, blocked, broker)
+}
 
+func waitBrokerEnqueued(t *testing.T, blocked *BlockedEvals, broker *EvalBroker) {
 	testutil.WaitForResult(func() (bool, error) {
 		// Verify Unblock caused an enqueue
 		brokerStats := broker.Stats()
@@ -212,23 +215,7 @@ func TestBlockedEvals_UnblockEligible(t *testing.T) {
 	}
 
 	blocked.Unblock("v1:123", 1000)
-
-	testutil.WaitForResult(func() (bool, error) {
-		// Verify Unblock caused an enqueue
-		brokerStats := broker.Stats()
-		if brokerStats.TotalReady != 1 {
-			return false, fmt.Errorf("bad: %#v", brokerStats)
-		}
-
-		// Verify Unblock updates the stats
-		bStats := blocked.Stats()
-		if bStats.TotalBlocked != 0 || bStats.TotalEscaped != 0 {
-			return false, fmt.Errorf("bad: %#v", bStats)
-		}
-		return true, nil
-	}, func(err error) {
-		t.Fatalf("err: %s", err)
-	})
+	waitBrokerEnqueued(t, blocked, broker)
 }
 
 func TestBlockedEvals_UnblockIneligible(t *testing.T) {
@@ -287,23 +274,7 @@ func TestBlockedEvals_UnblockUnknown(t *testing.T) {
 
 	// Should unblock because the eval hasn't seen this node class.
 	blocked.Unblock("v1:789", 1000)
-
-	testutil.WaitForResult(func() (bool, error) {
-		// Verify Unblock causes an enqueue
-		brokerStats := broker.Stats()
-		if brokerStats.TotalReady != 1 {
-			return false, fmt.Errorf("bad: %#v", brokerStats)
-		}
-
-		// Verify Unblock updates the stats
-		bStats := blocked.Stats()
-		if bStats.TotalBlocked != 0 || bStats.TotalEscaped != 0 {
-			return false, fmt.Errorf("bad: %#v", bStats)
-		}
-		return true, nil
-	}, func(err error) {
-		t.Fatalf("err: %s", err)
-	})
+	waitBrokerEnqueued(t, blocked, broker)
 }
 
 func TestBlockedEvals_UnblockEligible_Quota(t *testing.T) {
@@ -323,23 +294,7 @@ func TestBlockedEvals_UnblockEligible_Quota(t *testing.T) {
 	}
 
 	blocked.UnblockQuota("foo", 1000)
-
-	testutil.WaitForResult(func() (bool, error) {
-		// Verify Unblock caused an enqueue
-		brokerStats := broker.Stats()
-		if brokerStats.TotalReady != 1 {
-			return false, fmt.Errorf("bad: %#v", brokerStats)
-		}
-
-		// Verify Unblock updates the stats
-		bs := blocked.Stats()
-		if bs.TotalBlocked != 0 || bs.TotalEscaped != 0 || bs.TotalQuotaLimit != 0 {
-			return false, fmt.Errorf("bad: %#v", bs)
-		}
-		return true, nil
-	}, func(err error) {
-		t.Fatalf("err: %s", err)
-	})
+	waitBrokerEnqueued(t, blocked, broker)
 }
 
 func TestBlockedEvals_UnblockIneligible_Quota(t *testing.T) {
@@ -417,22 +372,7 @@ func TestBlockedEvals_Reblock(t *testing.T) {
 		t.Fatalf("err: %v", err)
 	}
 
-	testutil.WaitForResult(func() (bool, error) {
-		// Verify Unblock causes an enqueue
-		brokerStats := broker.Stats()
-		if brokerStats.TotalReady != 1 {
-			return false, fmt.Errorf("bad: %#v", brokerStats)
-		}
-
-		// Verify Unblock updates the stats
-		bStats := blocked.Stats()
-		if bStats.TotalBlocked != 0 || bStats.TotalEscaped != 0 {
-			return false, fmt.Errorf("bad: %#v", bStats)
-		}
-		return true, nil
-	}, func(err error) {
-		t.Fatalf("err: %s", err)
-	})
+	waitBrokerEnqueued(t, blocked, broker)
 }
 
 // Test the block case in which the eval should be immediately unblocked since
@@ -458,17 +398,7 @@ func TestBlockedEvals_Block_ImmediateUnblock_Escaped(t *testing.T) {
 		t.Fatalf("bad: %#v", blockedStats)
 	}
 
-	testutil.WaitForResult(func() (bool, error) {
-		// Verify Unblock caused an enqueue
-		brokerStats := broker.Stats()
-		if brokerStats.TotalReady != 1 {
-			return false, fmt.Errorf("bad: %#v", brokerStats)
-		}
-
-		return true, nil
-	}, func(err error) {
-		t.Fatalf("err: %s", err)
-	})
+	waitBrokerEnqueued(t, blocked, broker)
 }
 
 // Test the block case in which the eval should be immediately unblocked since
@@ -495,17 +425,7 @@ func TestBlockedEvals_Block_ImmediateUnblock_UnseenClass_After(t *testing.T) {
 		t.Fatalf("bad: %#v", blockedStats)
 	}
 
-	testutil.WaitForResult(func() (bool, error) {
-		// Verify Unblock caused an enqueue
-		brokerStats := broker.Stats()
-		if brokerStats.TotalReady != 1 {
-			return false, fmt.Errorf("bad: %#v", brokerStats)
-		}
-
-		return true, nil
-	}, func(err error) {
-		t.Fatalf("err: %s", err)
-	})
+	waitBrokerEnqueued(t, blocked, broker)
 }
 
 // Test the block case in which the eval should not immediately unblock since
@@ -556,17 +476,7 @@ func TestBlockedEvals_Block_ImmediateUnblock_SeenClass(t *testing.T) {
 		t.Fatalf("bad: %#v", blockedStats)
 	}
 
-	testutil.WaitForResult(func() (bool, error) {
-		// Verify Unblock caused an enqueue
-		brokerStats := broker.Stats()
-		if brokerStats.TotalReady != 1 {
-			return false, fmt.Errorf("bad: %#v", brokerStats)
-		}
-
-		return true, nil
-	}, func(err error) {
-		t.Fatalf("err: %s", err)
-	})
+	waitBrokerEnqueued(t, blocked, broker)
 }
 
 // Test the block case in which the eval should be immediately unblocked since
@@ -592,17 +502,7 @@ func TestBlockedEvals_Block_ImmediateUnblock_Quota(t *testing.T) {
 		t.Fatalf("bad: %#v", bs)
 	}
 
-	testutil.WaitForResult(func() (bool, error) {
-		// Verify Unblock caused an enqueue
-		brokerStats := broker.Stats()
-		if brokerStats.TotalReady != 1 {
-			return false, fmt.Errorf("bad: %#v", brokerStats)
-		}
-
-		return true, nil
-	}, func(err error) {
-		t.Fatalf("err: %s", err)
-	})
+	waitBrokerEnqueued(t, blocked, broker)
 }
 
 func TestBlockedEvals_UnblockFailed(t *testing.T) {
