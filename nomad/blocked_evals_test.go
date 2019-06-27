@@ -606,7 +606,31 @@ func TestBlockedEvals_Untrack_Quota(t *testing.T) {
 	}
 }
 
-func TestBlockedEvals_NodeIDSystem(t *testing.T) {
+func TestBlockedEvals_UnblockNode(t *testing.T) {
+	t.Parallel()
+	blocked, broker := testBlockedEvals(t)
+
+	require.NotNil(t, broker)
+
+	// Create a blocked evals and add it to the blocked tracker.
+	e := mock.Eval()
+	e.Type = structs.JobTypeSystem
+	e.NodeID = "foo"
+	e.SnapshotIndex = 999
+	blocked.Block(e)
+
+	// Verify block did track
+	bs := blocked.Stats()
+	require.Equal(t, 1, bs.TotalBlocked)
+
+	blocked.UnblockNode("foo", 1000)
+	waitBrokerEnqueued(t, blocked, broker)
+	bs = blocked.Stats()
+	require.Empty(t, blocked.system.node)
+	require.Equal(t, 0, bs.TotalBlocked)
+}
+
+func TestBlockedEvals_SystemUntrack(t *testing.T) {
 	t.Parallel()
 	blocked, _ := testBlockedEvals(t)
 
