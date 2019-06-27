@@ -150,7 +150,11 @@ func (b *BlockedEvals) delSystemEval(eval *structs.Evaluation) {
 	// if we're deleting from system.node, decrement stats
 	if _, ok = b.system.node[eval.NodeID][eval.ID]; ok {
 		b.stats.TotalBlocked--
-		delete(b.system.node[eval.NodeID], eval.ID)
+		if len(b.system.node[eval.NodeID]) == 1 {
+			delete(b.system.node, eval.NodeID)
+		} else {
+			delete(b.system.node[eval.NodeID], eval.ID)
+		}
 	}
 }
 
@@ -567,12 +571,12 @@ func (b *BlockedEvals) UnblockClassAndQuota(class, quota string, index uint64) {
 // it on the eval broker
 func (b *BlockedEvals) UnblockNode(nodeID string, index uint64) {
 	b.l.Lock()
+	defer b.l.Unlock()
 
 	evals, ok := b.system.node[nodeID]
 
 	// Do nothing if not enabled
 	if !b.enabled || !ok || len(evals) == 0 {
-		b.l.Unlock()
 		return
 	}
 
