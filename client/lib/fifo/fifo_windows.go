@@ -65,6 +65,11 @@ func (f *winFIFO) Write(p []byte) (n int, err error) {
 }
 
 func (f *winFIFO) Close() error {
+	f.connLock.Lock()
+	if f.conn != nil {
+		f.conn.Close()
+	}
+	f.connLock.Unlock()
 	return f.listener.Close()
 }
 
