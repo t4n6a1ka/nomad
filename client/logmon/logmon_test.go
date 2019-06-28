@@ -143,11 +143,6 @@ func TestLogmon_Start_restart(t *testing.T) {
 		require.NoError(err)
 	})
 
-	require.NoError(lm.Stop())
-
-	// Start logmon again and assert that it appended to the file
-	require.NoError(lm.Start(cfg))
-
 	stdout, err = fifo.OpenWriter(stdoutFifoPath)
 	require.NoError(err)
 	stderr, err = fifo.OpenWriter(stderrFifoPath)
@@ -165,6 +160,14 @@ func TestLogmon_Start_restart(t *testing.T) {
 	}, func(err error) {
 		require.NoError(err)
 	})
+
+	// Start logmon again and assert that it appended to the file
+	require.NoError(lm.Start(cfg))
+
+	stdout, err = fifo.OpenWriter(stdoutFifoPath)
+	require.NoError(err)
+	stderr, err = fifo.OpenWriter(stderrFifoPath)
+	require.NoError(err)
 
 	_, err = stdout.Write([]byte("st\n"))
 	require.NoError(err)
